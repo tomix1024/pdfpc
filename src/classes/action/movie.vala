@@ -376,10 +376,32 @@ namespace pdfpc {
                     GLib.printerr("Movie has no file name\n");
                     return null;
                 }
+
+                string[] splitfile = file.split("?", 2);
+                file = splitfile[0];
+                string querystring = "";
+                if (splitfile.length == 2) {
+                    querystring = splitfile[1];
+                }
+                string[] queryarray = querystring.split("&");
+
+                autostart = "autostart" in queryarray;
+                noaudio = "noaudio" in queryarray;
+                loop = "loop" in queryarray;
+                noprogress = "noprogress" in queryarray;
+                foreach (string param in queryarray) {
+                    if (param.has_prefix("start=")) {
+                        start = int.parse(param.split("=")[1]);
+                    }
+                    if (param.has_prefix("stop=")) {
+                        stop = int.parse(param.split("=")[1]);
+                    }
+                }
+
                 uri = filename_to_uri(file, controller.get_pdf_fname());
                 temp = false;
                 options.poster = movie.need_poster();
-                options.noprogress = !movie.show_controls();
+                options.noprogress = noprogress || !movie.show_controls();
                 options.loop = movie.get_play_mode() == Poppler.MoviePlayMode.REPEAT;
                 options.starttime = (int) (movie.get_start()/1000000000L);
                 int duration = (int) (movie.get_duration()/1000000000L);
