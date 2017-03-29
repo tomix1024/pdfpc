@@ -267,8 +267,12 @@ namespace pdfpc {
             Poppler.Annot annot = mapping.annot;
             string uri;
             bool temp = false;
-            bool noprogress = false;
+            bool autostart = false;
+            bool noaudio = false;
             bool loop = false;
+            bool noprogress = false;
+            var start = 0;
+            var stop = 0;
             switch (annot.get_annot_type()) {
             case Poppler.AnnotType.SCREEN:
                 if (!("video" in annot.get_contents())) {
@@ -317,9 +321,31 @@ namespace pdfpc {
                     GLib.printerr("Movie has no file name\n");
                     return null;
                 }
+
+                string[] splitfile = file.split("?", 2);
+                file = splitfile[0];
+                string querystring = "";
+                if (splitfile.length == 2) {
+                    querystring = splitfile[1];
+                }
+                string[] queryarray = querystring.split("&");
+
+                autostart = "autostart" in queryarray;
+                noaudio = "noaudio" in queryarray;
+                loop = "loop" in queryarray;
+                noprogress = "noprogress" in queryarray;
+                foreach (string param in queryarray) {
+                    if (param.has_prefix("start=")) {
+                        start = int.parse(param.split("=")[1]);
+                    }
+                    if (param.has_prefix("stop=")) {
+                        stop = int.parse(param.split("=")[1]);
+                    }
+                }
+
                 uri = filename_to_uri(file, controller.get_pdf_fname());
                 temp = false;
-                noprogress = !movie.show_controls();
+                noprogress = noprogress || !movie.show_controls();
                 #if NEW_POPPLER
                 loop = movie.get_play_mode() == Poppler.MoviePlayMode.REPEAT;
                 #endif
@@ -331,7 +357,7 @@ namespace pdfpc {
 
             Type type = Type.from_instance(this);
             ActionMapping new_obj = (ActionMapping) GLib.Object.new(type);
-            this.init_movie(new_obj, mapping.area, controller, document, uri, false, loop, noprogress, false, 0, 0, temp);
+            this.init_movie(new_obj, mapping.area, controller, document, uri, autostart, loop, noprogress, noaudio, start, stop, temp);
             return new_obj;
         }
 
