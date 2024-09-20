@@ -385,23 +385,23 @@ namespace pdfpc {
                 }
                 string[] queryarray = querystring.split("&");
 
-                autostart = "autostart" in queryarray;
-                noaudio = "noaudio" in queryarray;
-                loop = "loop" in queryarray;
-                noprogress = "noprogress" in queryarray;
+                options.autostart = "autostart" in queryarray;
+                options.noaudio = "noaudio" in queryarray;
+                options.loop = "loop" in queryarray;
+                options.noprogress = "noprogress" in queryarray;
                 foreach (string param in queryarray) {
                     if (param.has_prefix("start=")) {
-                        start = int.parse(param.split("=")[1]);
+                        options.starttime = int.parse(param.split("=")[1]);
                     }
                     if (param.has_prefix("stop=")) {
-                        stop = int.parse(param.split("=")[1]);
+                        options.stoptime = int.parse(param.split("=")[1]);
                     }
                 }
 
                 uri = filename_to_uri(file, controller.get_pdf_fname());
                 temp = false;
                 options.poster = movie.need_poster();
-                options.noprogress = noprogress || !movie.show_controls();
+                options.noprogress = options.noprogress || !movie.show_controls();
                 options.loop = movie.get_play_mode() == Poppler.MoviePlayMode.REPEAT;
                 options.starttime = (int) (movie.get_start()/1000000000L);
                 int duration = (int) (movie.get_duration()/1000000000L);
