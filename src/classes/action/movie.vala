@@ -402,7 +402,7 @@ namespace pdfpc {
                 temp = false;
                 options.poster = movie.need_poster();
                 options.noprogress = options.noprogress || !movie.show_controls();
-                options.loop = movie.get_play_mode() == Poppler.MoviePlayMode.REPEAT;
+                options.loop = options.loop || (movie.get_play_mode() == Poppler.MoviePlayMode.REPEAT);
                 options.starttime = (int) (movie.get_start()/1000000000L);
                 int duration = (int) (movie.get_duration()/1000000000L);
                 if (duration > 0) {
