@@ -50,7 +50,7 @@ namespace pdfpc {
         public Pdf(Metadata.Pdf metadata) {
             this.metadata = metadata;
 
-            this.cache = new Renderer.Cache();
+            this.cache = new Renderer.Cache(metadata);
         }
 
         /**
