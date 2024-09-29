@@ -166,6 +166,26 @@ namespace pdfpc {
             return surface;
         }
 
+        /**
+         * Render the cached page only if it does not exist yet.
+         */
+        public void render_cache(int slide_number,
+            bool notes_area, int width, int height,
+            bool permanent_cache = false)
+            throws Renderer.RenderError {
+
+            CachedPageProps props = new CachedPageProps(slide_number,
+                    width, height, notes_area);
+
+            // Check for the page in the cache
+            if (this.cache.contains(props)) {
+                return;
+            }
+
+            // Actually render the page and store in cache
+            this.render(slide_number, notes_area, width, height, true, permanent_cache);
+        }
+
         public Cairo.ImageSurface fade_to_black(int width, int height) {
             Cairo.ImageSurface surface =
                 new Cairo.ImageSurface(Cairo.Format.RGB24, width, height);

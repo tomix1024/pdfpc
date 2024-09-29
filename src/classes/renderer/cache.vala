@@ -133,6 +133,14 @@ namespace pdfpc.Renderer {
         }
 
         /**
+         * Check if a slide is cached without unpacking the cached page.
+         */
+        public bool contains(CachedPageProps props) {
+            CachedPage page = this.storage.get(props);
+            return page != null;
+        }
+
+        /**
          * Invalidate the whole cache (if the document is reloaded/changed)
          */
         public void invalidate() {
