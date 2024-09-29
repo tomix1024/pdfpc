@@ -38,16 +38,29 @@ namespace pdfpc.Renderer {
          */
         protected uint timeout_id = 0;
 
+        protected GLib.Mutex mutex;
+
+        protected DateTime pdf_time;
+
+        /**
+         * Metadata object to cache slides for
+         */
+        protected Metadata.Pdf metadata;
+
         /**
          * Initialize the cache store and launch a periodic cleaning
          */
-        public Cache() {
+        public Cache(Metadata.Pdf metadata) {
             this.storage = new Gee.HashMap<CachedPageProps, CachedPage>();
             if (Options.cache_expiration > 0) {
                 this.timeout_id =
                     GLib.Timeout.add(1000*Options.cache_clean_period,
                         this.clean_cache);
             }
+
+            this.metadata = metadata;
+
+            invalidate();
         }
 
         /**
@@ -56,7 +69,10 @@ namespace pdfpc.Renderer {
          */
         public void store(CachedPageProps props, Cairo.ImageSurface surface,
             bool permanent) {
+            // Synchronize access to hashmap...
+            mutex.lock();
             CachedPage page = this.storage.get(props);
+            mutex.unlock();
             if (page == null) {
                 page = new CachedPage();
             }
@@ -65,9 +81,10 @@ namespace pdfpc.Renderer {
             page.atime = GLib.get_monotonic_time();
 
             // Store large images in the compressed (PNG) form
+            Gdk.Pixbuf pixbuf = null;
             uint size = 3*props.width*props.height;
             if (size/1024 > Options.cache_max_usize) {
-                Gdk.Pixbuf pixbuf = Gdk.pixbuf_get_from_surface(surface,
+                pixbuf = Gdk.pixbuf_get_from_surface(surface,
                     0, 0, surface.get_width(), surface.get_height());
                 try {
                     pixbuf.save_to_buffer(out page.png_data,
@@ -89,7 +106,26 @@ namespace pdfpc.Renderer {
                 page.surface = surface;
                 page.png_data = null;
             }
+            // Synchronize access to hashmap...
+            mutex.lock();
             this.storage.set(props, page);
+            mutex.unlock();
+
+            // Save to file
+            string cache_fname = get_persistent_file(props);
+            if (cache_fname != null) {
+                try {
+                    if (pixbuf == null) {
+                        pixbuf = Gdk.pixbuf_get_from_surface(surface,
+                            0, 0, surface.get_width(), surface.get_height());
+                    }
+                    pixbuf.save(cache_fname, "png");
+                    GLib.printerr("PNG saved for slide %u (%u, %u)\n", props.index, props.width, props.height);
+                } catch (Error e) {
+                    GLib.printerr("PNG save file failed for slide %u: %s\n",
+                        props.index, e.message);
+                }
+            }
         }
 
         /**
@@ -99,44 +135,99 @@ namespace pdfpc.Renderer {
          * null is returned
          */
         public Cairo.ImageSurface? retrieve(CachedPageProps props) {
+            // Synchronize access to hashmap...
+            mutex.lock();
             CachedPage page = this.storage.get(props);
+            mutex.unlock();
 
             if (page != null) {
                 page.atime = GLib.get_monotonic_time();
                 if (page.surface != null) {
                     return page.surface;
                 } else {
-                    var loader = new Gdk.PixbufLoader();
-                    try {
-                        loader.write(page.png_data);
-                        loader.close();
-                    } catch (Error e) {
-                        GLib.printerr("PNG loader failed for slide %u: %s\n",
-                            props.index, e.message);
-                        return null;
-                    }
-                    var pixbuf = loader.get_pixbuf();
-                    Cairo.ImageSurface surface =
-                        new Cairo.ImageSurface(Cairo.Format.ARGB32,
-                        pixbuf.get_width(), pixbuf.get_height());
-
-                    Cairo.Context cr = new Cairo.Context(surface);
-                    Gdk.cairo_set_source_pixbuf(cr, pixbuf, 0, 0);
-                    cr.rectangle(0, 0, pixbuf.get_width(), pixbuf.get_height());
-                    cr.fill();
-
-                    return surface;
+                    return decode_png_data(props, page.png_data);
                 }
             } else {
-                return null;
+                // Retrieve from file
+                string cache_fname = get_persistent_file(props);
+                if (cache_fname != null) {
+                    if (check_persistent_file(cache_fname)) {
+                        uint8[]? png_data = null;
+                        try {
+                            if (!GLib.FileUtils.get_data(cache_fname, out png_data)) {
+                                GLib.printerr("Failed to read slide %u (%u, %u)\n", props.index, props.width, props.height);
+                                return null;
+                            }
+                        } catch (GLib.FileError e) {
+                                GLib.printerr("Failed to read slide %u (%u, %u): %s\n", props.index, props.width, props.height, e.message);
+                        }
+                        var surface = decode_png_data(props, png_data);
+
+                        if (surface == null) {
+                            GLib.printerr("Failed to read slide %u (%u, %u)\n", props.index, props.width, props.height);
+                            return null;
+                        }
+
+                        // Cache the image in memory.
+                        page = new CachedPage();
+                        page.permanent = true; // TODO?
+                        page.atime = GLib.get_monotonic_time();
+
+                        // Store large images in the compressed (PNG) form
+                        uint size = 3*props.width*props.height;
+                        if (size/1024 > Options.cache_max_usize) {
+                            page.png_data = png_data;
+                            page.surface = null;
+                        } else {
+                            page.surface = surface;
+                            page.png_data = null;
+                        }
+
+                        return surface;
+                    }
+                }
             }
+            return null;
+        }
+
+        /**
+         * Check if a slide is cached without unpacking the cached page.
+         */
+        public bool contains(CachedPageProps props) {
+            // Synchronize access to hashmap...
+            mutex.lock();
+            CachedPage page = this.storage.get(props);
+            mutex.unlock();
+            if (page != null) {
+                return true;
+            }
+
+            string cache_fname = get_persistent_file(props);
+            if (cache_fname != null) {
+                return check_persistent_file(cache_fname);
+            }
+
+            return false;
         }
 
         /**
          * Invalidate the whole cache (if the document is reloaded/changed)
          */
         public void invalidate() {
+            // Synchronize access to hashmap...
+            mutex.lock();
             this.storage.clear();
+            mutex.unlock();
+
+            // Query the modification time of the pdf file.
+            try {
+                GLib.File file = File.new_for_path(this.metadata.pdf_fname);
+                FileInfo info = file.query_info("*", FileQueryInfoFlags.NONE);
+                this.pdf_time = info.get_modification_date_time();
+            } catch (Error e) {
+                GLib.printerr("Failed to query modification time of %s: %s\n",
+                    metadata.pdf_fname, e.message);
+            }
         }
 
         /**
@@ -145,6 +236,8 @@ namespace pdfpc.Renderer {
         public bool clean_cache() {
             var current_time = GLib.get_monotonic_time();
 
+            // Synchronize access to hashmap...
+            mutex.lock();
             var it = this.storage.map_iterator();
             while (it.has_next()) {
                 it.next();
@@ -162,7 +255,56 @@ namespace pdfpc.Renderer {
                     it.unset();
                 }
             }
+            mutex.unlock();
             return GLib.Source.CONTINUE;
+        }
+
+        protected string? get_persistent_file(CachedPageProps props) {
+            string cache_dname = metadata.cache_dname; // Options.persistent_cache;
+            if (cache_dname != null) {
+                return "%s/slide-%s.png".printf(cache_dname, props.to_string());
+            }
+            return null;
+        }
+
+        protected bool check_persistent_file(string cache_fname) {
+            if (FileUtils.test(cache_fname, FileTest.EXISTS)) {
+                // Query the modification time of the cache file.
+                try {
+                    GLib.File file = File.new_for_path(cache_fname);
+                    FileInfo info = file.query_info("*", FileQueryInfoFlags.NONE);
+                    DateTime cache_time = info.get_modification_date_time();
+                    // Is the cache file newer than the pdf?
+                    return this.pdf_time.compare(cache_time) < 0;
+                } catch (Error e) {
+                    GLib.printerr("Failed to query modification time of %s: %s\n",
+                        cache_fname, e.message);
+                }
+            }
+            return false;
+        }
+
+        protected Cairo.ImageSurface? decode_png_data(CachedPageProps props, uint8[] png_data) {
+            var loader = new Gdk.PixbufLoader();
+            try {
+                loader.write(png_data);
+                loader.close();
+            } catch (Error e) {
+                GLib.printerr("PNG loader failed for slide %u: %s\n",
+                    props.index, e.message);
+                return null;
+            }
+            var pixbuf = loader.get_pixbuf();
+            Cairo.ImageSurface surface =
+                new Cairo.ImageSurface(Cairo.Format.ARGB32,
+                pixbuf.get_width(), pixbuf.get_height());
+
+            Cairo.Context cr = new Cairo.Context(surface);
+            Gdk.cairo_set_source_pixbuf(cr, pixbuf, 0, 0);
+            cr.rectangle(0, 0, pixbuf.get_width(), pixbuf.get_height());
+            cr.fill();
+
+            return surface;
         }
     }
 
@@ -188,6 +330,10 @@ namespace pdfpc.Renderer {
                    this.width      == other.width  &&
                    this.height     == other.height &&
                    this.notes_area == other.notes_area;
+        }
+
+        public string to_string() {
+            return "%u-%u-%u-%s".printf(this.index, this.width, this.height, this.notes_area ? "notes" : "main");
         }
     }
 

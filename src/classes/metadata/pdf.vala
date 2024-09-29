@@ -91,6 +91,10 @@ namespace pdfpc.Metadata {
         }
         protected string? pdfpc_fname = null;
 
+        public string? cache_dname {
+            get; protected set; default = null;
+        }
+
         /**
          * Poppler document of the associated PDF file
          */
@@ -683,6 +687,16 @@ namespace pdfpc.Metadata {
                     this.pdfpc_fname = fname + ".pdfpc";
                 }
             }
+
+            // Create cache directory
+            int extension_index = this.pdf_fname.last_index_of(".");
+            if (extension_index > -1) {
+                this.cache_dname = this.pdf_fname[0:extension_index] + ".pdfpc-cache";
+            }
+            else {
+                this.cache_dname = this.pdf_fname + ".pdfpc-cache";
+            }
+            GLib.DirUtils.create_with_parents(this.cache_dname, 0775);
         }
 
         public void set_default_transition_from_string(string line) {

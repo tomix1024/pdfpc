@@ -195,8 +195,7 @@ namespace pdfpc {
                     // pixmap in the cache if it is enabled. This
                     // is exactly what we want.
                     try {
-                        this.renderer.render(*p_slide, this.notes_area, width, height,
-                            true);
+                        this.renderer.render_cache(*p_slide, this.notes_area, width, height);
                     } catch(Renderer.RenderError e) {
                         GLib.printerr("Could pre-render page '%i': %s\n",
                             *p_slide, e.message);
