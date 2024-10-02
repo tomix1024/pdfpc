@@ -240,9 +240,9 @@ namespace pdfpc.Renderer {
         }
 
         protected string? get_persistent_file(CachedPageProps props) {
-            string cachepath = "."; // Options.persistent_cache;
-            if (cachepath != null) {
-                return "%s/slide-%s.png".printf(cachepath, props.to_string());
+            string cache_dname = metadata.cache_dname; // Options.persistent_cache;
+            if (cache_dname != null) {
+                return "%s/slide-%s.png".printf(cache_dname, props.to_string());
             }
             return null;
         }
