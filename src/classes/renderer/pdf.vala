@@ -39,6 +39,16 @@ namespace pdfpc {
         protected Renderer.Cache cache { get; set; }
 
         /**
+         * Mutex to synchronize access to libpoppler/libcairo
+         */
+        protected GLib.Mutex mutex;
+
+        /**
+         * Thread pool for background rendering jobs.
+         */
+        protected GLib.ThreadPool<RenderJob> thread_pool;
+
+        /**
          * Base constructor taking a pdf metadata object as well as the desired
          * render width and height as parameters.
          *
@@ -51,6 +61,25 @@ namespace pdfpc {
             this.metadata = metadata;
 
             this.cache = new Renderer.Cache(metadata);
+
+            // Just one thread!
+            try {
+                this.thread_pool = new ThreadPool<RenderJob>.with_owned_data((job) => {
+                    try {
+                        this.render_cache_internal(job.slide_number,
+                            job.notes_area, job.width, job.height,
+                            job.permanent_cache);
+                    } catch (Renderer.RenderError e) {
+                        GLib.printerr("Failed to render cached slide: %s\n", e.message);
+                    }
+                }, 1, true); // NOTE: There can only be one rendering happen at a time!
+                this.thread_pool.set_sort_function((lhs, rhs) => {
+                    return lhs.slide_number - rhs.slide_number;
+                });
+            } catch (GLib.ThreadError e) {
+                this.thread_pool = null;
+                GLib.printerr("Could not create thread pool: %s\n", e.message);
+            }
         }
 
         /**
@@ -86,6 +115,9 @@ namespace pdfpc {
                     return cache_content;
                 }
             }
+
+            // Synchronize access to libpoppler/libcairo calls.
+            mutex.lock();
 
             // Measure the time to render the page
             GLib.Timer timer = new GLib.Timer();
@@ -145,6 +177,7 @@ namespace pdfpc {
             page.render(cr);
 
             timer.stop();
+            mutex.unlock();
             double rtime = timer.elapsed();
             if (Options.cache_debug) {
                 printerr("Render time of [%d] (%dx%d) = %g s\n",
@@ -182,6 +215,29 @@ namespace pdfpc {
                 return;
             }
 
+            try {
+                thread_pool.add(new RenderJob(slide_number, notes_area, width, height, permanent_cache));
+                return;
+            } catch (GLib.ThreadError e) {
+                GLib.printerr("Failed to add job to thread pool: %s", e.message);
+            }
+
+            // Actually render the page and store in cache if we could not defer the request
+            this.render(slide_number, notes_area, width, height, true, permanent_cache);
+        }
+        protected void render_cache_internal(int slide_number,
+            bool notes_area, int width, int height,
+            bool permanent_cache = false)
+            throws Renderer.RenderError {
+
+            CachedPageProps props = new CachedPageProps(slide_number,
+                    width, height, notes_area);
+
+            // Check for the page in the cache
+            if (this.cache.contains(props)) {
+                return;
+            }
+
             // Actually render the page and store in cache
             this.render(slide_number, notes_area, width, height, true, permanent_cache);
         }
@@ -207,6 +263,24 @@ namespace pdfpc {
          */
         public void invalidate_cache() {
             this.cache.invalidate();
+        }
+    }
+
+    protected class RenderJob {
+        public int slide_number;
+        public bool notes_area;
+        public int width;
+        public int height;
+        public bool permanent_cache;
+
+        public RenderJob(int slide_number,
+            bool notes_area, int width, int height,
+            bool permanent_cache) {
+            this.slide_number = slide_number;
+            this.notes_area = notes_area;
+            this.width = width;
+            this.height = height;
+            this.permanent_cache = permanent_cache;
         }
     }
 
