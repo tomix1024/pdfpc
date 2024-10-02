@@ -489,6 +489,12 @@ namespace pdfpc {
                 });
                 this.controller.presentation.show_all();
             }
+            // Make sure that the presenter is focused and not the presentation!
+            if (this.controller.presenter != null && this.controller.presentation != null)
+            {
+                this.controller.presentation.set_focus_on_map(false);
+                this.controller.presenter.set_focus_on_map(true);
+            }
 
             if (page_hnum >= 1 &&
                 page_hnum <= metadata.get_end_user_slide() + 1) {
