@@ -38,6 +38,8 @@ namespace pdfpc.Renderer {
          */
         protected uint timeout_id = 0;
 
+        protected GLib.Mutex mutex;
+
         protected DateTime pdf_time;
 
         /**
@@ -67,7 +69,10 @@ namespace pdfpc.Renderer {
          */
         public void store(CachedPageProps props, Cairo.ImageSurface surface,
             bool permanent) {
+            // Synchronize access to hashmap...
+            mutex.lock();
             CachedPage page = this.storage.get(props);
+            mutex.unlock();
             if (page == null) {
                 page = new CachedPage();
             }
@@ -101,7 +106,10 @@ namespace pdfpc.Renderer {
                 page.surface = surface;
                 page.png_data = null;
             }
+            // Synchronize access to hashmap...
+            mutex.lock();
             this.storage.set(props, page);
+            mutex.unlock();
 
             // Save to file
             string cache_fname = get_persistent_file(props);
@@ -127,7 +135,10 @@ namespace pdfpc.Renderer {
          * null is returned
          */
         public Cairo.ImageSurface? retrieve(CachedPageProps props) {
+            // Synchronize access to hashmap...
+            mutex.lock();
             CachedPage page = this.storage.get(props);
+            mutex.unlock();
 
             if (page != null) {
                 page.atime = GLib.get_monotonic_time();
@@ -183,7 +194,10 @@ namespace pdfpc.Renderer {
          * Check if a slide is cached without unpacking the cached page.
          */
         public bool contains(CachedPageProps props) {
+            // Synchronize access to hashmap...
+            mutex.lock();
             CachedPage page = this.storage.get(props);
+            mutex.unlock();
             if (page != null) {
                 return true;
             }
@@ -200,7 +214,10 @@ namespace pdfpc.Renderer {
          * Invalidate the whole cache (if the document is reloaded/changed)
          */
         public void invalidate() {
+            // Synchronize access to hashmap...
+            mutex.lock();
             this.storage.clear();
+            mutex.unlock();
 
             // Query the modification time of the pdf file.
             try {
@@ -219,6 +236,8 @@ namespace pdfpc.Renderer {
         public bool clean_cache() {
             var current_time = GLib.get_monotonic_time();
 
+            // Synchronize access to hashmap...
+            mutex.lock();
             var it = this.storage.map_iterator();
             while (it.has_next()) {
                 it.next();
@@ -236,6 +255,7 @@ namespace pdfpc.Renderer {
                     it.unset();
                 }
             }
+            mutex.unlock();
             return GLib.Source.CONTINUE;
         }
 
