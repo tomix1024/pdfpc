@@ -767,7 +767,19 @@ namespace pdfpc.Window {
 
             if (this.metadata.has_beamer_notes) {
                 this.notes_stack.set_visible_child_name("view");
-                this.notes_view.display(current_slide_number);
+                // The allocation of the notes_view does not change "sufficiently fast" after activation.
+                // If the allocation is still invalid, we defer updating the contents of the notes_view.
+                Gtk.Allocation allocation;
+                this.notes_view.get_allocation(out allocation);
+                if (allocation.width * allocation.height <= 1)
+                {
+                    GLib.Idle.add(() => {
+                        this.notes_view.display(current_slide_number);
+                        return GLib.Source.REMOVE;
+                    });
+                } else {
+                    this.notes_view.display(current_slide_number);
+                }
             } else {
 #if MDVIEW
                 this.notes_stack.set_visible_child_name("mdview");
