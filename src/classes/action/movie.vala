@@ -214,7 +214,10 @@ namespace pdfpc {
                 movie.options.starttime*Gst.SECOND);
 
             if (movie.options.autostart) {
-                movie.play();
+                GLib.Idle.add( () => {
+                    movie.play();
+                    return false;
+                } );
             } else if (!movie.options.poster) {
                 movie.hide();
             }
