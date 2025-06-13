@@ -104,6 +104,11 @@ namespace pdfpc {
         protected Gee.List<Gtk.Widget> sinks;
 
         /**
+         * Is this video already initialized, and not yet destroyed?
+         */
+         protected bool initialized = false;
+
+        /**
          * A flag indicating that the video widget(s) are shown
          */
         protected bool shown = false;
@@ -213,9 +218,14 @@ namespace pdfpc {
             movie.pipeline.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH,
                 movie.options.starttime*Gst.SECOND);
 
+            // mark the movie as initialized
+            movie.initialized = true;
+
             if (movie.options.autostart) {
                 GLib.Idle.add( () => {
-                    movie.play();
+                    if (movie.initialized) {
+                        movie.play();
+                    }
                     return false;
                 } );
             } else if (!movie.options.poster) {
@@ -436,6 +446,9 @@ namespace pdfpc {
                     GLib.printerr("Problem deleting temp file %s\n", this.temp);
                 }
             }
+
+            // Mark the movie as no longer initialized
+            this.initialized = false;
 
             foreach (var sink in this.sinks) {
                 var parent = sink.parent as View.Video;
