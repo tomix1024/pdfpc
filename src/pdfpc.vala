@@ -311,6 +311,16 @@ namespace pdfpc {
 
 #if MOVIES
             Gst.init(ref args);
+
+            // When videos are decoded with nvcodec, loading the gst plugin on the first initialization of the gst pipeline takes multiple seconds.
+            // Instantiating any GElement from the nvcodec plugin forces this overhead to happen (now).
+            Thread<int> gst_nv_thread = new Thread<int>("init_gst_nv", () => {
+                var cudaconvert = Gst.ElementFactory.make("cudaconvert", "cudaconvert");
+                if (cudaconvert != null) {
+                    cudaconvert.unref();
+                }
+                return 0;
+            });
 #endif
             // parse size option
             // should be in the width:height format
@@ -575,6 +585,10 @@ namespace pdfpc {
             // Enter the Glib eventloop
             // Everything from this point on is completely signal based
             Gtk.main();
+
+#if MOVIES
+            gst_nv_thread.join();
+#endif
         }
 
         /**
